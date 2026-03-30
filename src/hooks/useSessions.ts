@@ -127,6 +127,7 @@ export function useSessions() {
   // --- Ask detection from feed events ---
   const ASK_RESUME_EVENTS = new Set<FeedEventType>(["PreToolUse", "SubagentStart", "UserPromptSubmit"]);
   const lastStopMessage = useRef<Record<string, string>>({});
+  const lastAskAdded = useRef<Record<string, number>>({}); // cooldown: oracle → timestamp
 
   const detectAsk = useCallback((event: FeedEvent) => {
     const { addAsk, dismissByOracle } = useFleetStore.getState();
@@ -134,7 +135,11 @@ export function useSessions() {
 
     if (ASK_RESUME_EVENTS.has(event.event)) {
       const name = agent?.name || event.oracle;
-      dismissByOracle(name);
+      // Cooldown: don't dismiss asks added in the last 5s (prevents blink race)
+      const addedAt = lastAskAdded.current[name] || 0;
+      if (Date.now() - addedAt > 5000) {
+        dismissByOracle(name);
+      }
       delete lastStopMessage.current[name];
       return;
     }
@@ -164,6 +169,7 @@ export function useSessions() {
         }
         const displayMessage = stopMsg && stopMsg.length > event.message.length ? stopMsg : event.message;
         addAsk({ oracle: oracleName, target: agent?.target || "", type: askType, message: displayMessage });
+        lastAskAdded.current[oracleName] = Date.now();
         delete lastStopMessage.current[oracleName];
       }
     }
@@ -212,11 +218,10 @@ export function useSessions() {
     }
   }, []);
 
-  // Subscribe to statuses for agents derivation (status changes are infrequent)
-  const statuses = useFeedStatusStore((s) => s.statuses);
-
-  // Derive flat agent list — depends on sessions + statuses (NOT previews)
+  // Derive flat agent list — depends on sessions ONLY (not statuses, not previews)
+  // Components read status via useAgentStatus(target) from feedStatusStore
   const agents: AgentState[] = useMemo(() => {
+    const statuses = useFeedStatusStore.getState().statuses; // snapshot, not subscription
     const list = sessions.flatMap((s) =>
       s.windows.map((w) => {
         const key = `${s.name}:${w.index}`;
@@ -233,7 +238,7 @@ export function useSessions() {
           windowIndex: w.index,
           active: w.active,
           preview: "", // read from usePreviewStore at component level
-          status: statuses[key] || "idle",
+          status: statuses[key] || "idle", // snapshot — not reactive, use useAgentStatus() for live
           project,
           cwd: w.cwd,
           source: s.source && s.source !== "local" ? s.source : undefined,
@@ -243,7 +248,7 @@ export function useSessions() {
     list.sort((a, b) => agentSortKey(a.name) - agentSortKey(b.name));
     agentsRef.current = list;
     return list;
-  }, [sessions, statuses]);
+  }, [sessions]);
 
   const feedActive = useMemo(() => activeOracles(feedEvents, 5 * 60_000), [feedEvents]);
 

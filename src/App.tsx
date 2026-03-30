@@ -356,6 +356,15 @@ export function App() {
     window.location.hash = currentView;
   }, []);
 
+  // Stable callbacks — prevent re-renders from breaking memo
+  const onJump = useCallback(() => setShowJump(true), []);
+  const onInbox = useCallback(() => setShowInbox(true), []);
+  const onCloseShortcutsStable = useCallback(() => setShowShortcuts(false), []);
+  const onCloseJump = useCallback(() => setShowJump(false), []);
+  const onCloseInbox = useCallback(() => setShowInbox(false), []);
+  const onCloseBroadcast = useCallback(() => setShowBroadcast(false), []);
+  const onCloseSearch = useCallback(() => setShowOracleSearch(false), []);
+
   // Shared props for Layout
   const layoutProps = {
     connected,
@@ -366,18 +375,18 @@ export function App() {
     askCount,
     muted,
     onToggleMute: toggleMuted,
-    onJump: () => setShowJump(true),
-    onInbox: () => setShowInbox(true),
+    onJump,
+    onInbox,
     terminalModal: selectedAgent ? (
       <TerminalModal agent={selectedAgent} send={send} onClose={onCloseTerminal} onNavigate={onNavigate} onSelectSibling={onSelectAgent} siblings={siblings} />
     ) : null,
     showShortcuts,
-    onCloseShortcuts: () => setShowShortcuts(false),
-    jumpOverlay: showJump ? <JumpOverlay agents={agents} onSelect={onSelectAgent} onClose={() => setShowJump(false)} /> : null,
-    inboxOverlay: showInbox ? <InboxOverlay send={send} onClose={() => setShowInbox(false)} /> : null,
+    onCloseShortcuts: onCloseShortcutsStable,
+    jumpOverlay: showJump ? <JumpOverlay agents={agents} onSelect={onSelectAgent} onClose={onCloseJump} /> : null,
+    inboxOverlay: showInbox ? <InboxOverlay send={send} onClose={onCloseInbox} /> : null,
     broadcastModal: (<>
-      {showBroadcast && <BroadcastModal agents={agents} send={send} onClose={() => setShowBroadcast(false)} />}
-      {showOracleSearch && <OracleSearch onClose={() => setShowOracleSearch(false)} />}
+      {showBroadcast && <BroadcastModal agents={agents} send={send} onClose={onCloseBroadcast} />}
+      {showOracleSearch && <OracleSearch onClose={onCloseSearch} />}
     </>),
   };
 
