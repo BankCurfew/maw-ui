@@ -4,7 +4,7 @@ import { apiUrl } from "../lib/api";
 const STORAGE_KEY = "office-unlocked";
 
 export function PinLock({ children }: { children: React.ReactNode }) {
-  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(STORAGE_KEY) === "1");
+  const [unlocked, setUnlocked] = useState(() => localStorage.getItem(STORAGE_KEY) === "1");
   const [pinLength, setPinLength] = useState(4);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -42,8 +42,7 @@ export function PinLock({ children }: { children: React.ReactNode }) {
           .then(r => r.json())
           .then(data => {
             if (data.ok) {
-              sessionStorage.setItem(STORAGE_KEY, "1");
-              window.location.hash = "mission";
+              localStorage.setItem(STORAGE_KEY, "1");
               setUnlocked(true);
             } else {
               setError(true);
