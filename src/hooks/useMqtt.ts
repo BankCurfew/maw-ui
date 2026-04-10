@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import mqtt from "mqtt";
 
-const BROKER = "wss://dustboy-wss-bridge.laris.workers.dev/mqtt";
+const BROKER = "wss://maw-mqtt-bridge.laris.workers.dev/ws/mqtt";
 const TOPIC = "maw/v1/hey/#";
 
 export interface MqttMessage {
