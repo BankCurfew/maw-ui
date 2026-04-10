@@ -38,14 +38,15 @@ export function PluginPanel() {
               </button>
             )}
           </div>
-          <div className="max-h-[100px] overflow-y-auto">
-            {[...liveMessages].reverse().slice(0, 8).map((m, i) => {
+          <div className="max-h-[300px] overflow-y-auto">
+            {[...liveMessages].reverse().slice(0, 20).map((m, i) => {
               const age = Math.floor((Date.now() - m.ts) / 1000);
+              const clean = (s: string) => s.replace(/-view$/, "").replace(/-oracle$/, "");
               return (
                 <div key={i} className="flex items-center gap-1.5 px-3 py-0.5 text-[9px] font-mono">
-                  <span className="text-cyan-400/60">{m.from}</span>
+                  <span className="text-cyan-400/60">{clean(m.from)}</span>
                   <span className="text-white/20">{"\u2192"}</span>
-                  <span className="text-cyan-400/60">{m.to}</span>
+                  <span className="text-cyan-400/60">{clean(m.to)}</span>
                   <span className="text-white/15 ml-auto">{age < 60 ? `${age}s` : `${Math.floor(age / 60)}m`}</span>
                 </div>
               );
