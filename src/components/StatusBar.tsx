@@ -76,6 +76,7 @@ const NAV_ITEMS = [
   { href: "#terminal", label: "Terminal", id: "terminal" },
   { href: "#chat", label: "Chat", id: "chat" },
   { href: "#teams", label: "Teams", id: "teams" },
+  { href: "#federation", label: "Fed", id: "federation" },
   { href: "#config", label: "Config", id: "config" },
 ];
 

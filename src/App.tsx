@@ -18,6 +18,7 @@ import { InboxOverlay } from "./components/InboxView";
 import { WorktreeView } from "./components/WorktreeView";
 import { ChatView } from "./components/ChatView";
 import { DashboardView } from "./components/DashboardView";
+import FederationView from "./components/FederationView";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { JumpOverlay } from "./components/JumpOverlay";
@@ -496,6 +497,14 @@ export function App() {
     return (
       <Layout activeView="chat" {...layoutProps}>
         <ChatView />
+      </Layout>
+    );
+  }
+
+  if (route === "federation") {
+    return (
+      <Layout activeView="federation" {...layoutProps}>
+        <FederationView />
       </Layout>
     );
   }
