@@ -25,7 +25,7 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
   const [roomsConfig, setRoomsConfig] = useState<RoomConfig[]>([]);
   const [fedAgents, setFedAgents] = useState<Record<string, string>>({}); // agentName → nodeName
   const [localNode, setLocalNode] = useState("");
-  const [namedPeers, setNamedPeers] = useState<Array<{ name: string; url: string }>>([]);
+  const [namedPeers, setNamedPeers] = useState<Record<string, string>>({});
   useEffect(() => {
     fetch(apiUrl("/api/rooms")).then(r => r.json()).then(d => {
       if (d.rooms?.length > 0) setRoomsConfig(d.rooms);
@@ -76,7 +76,7 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
         // If room has remote agents, show peer URL badge instead of "local"
         const remoteAgent = roomAgents.find(a => a.source && a.source !== localNode);
         const peerUrl = remoteAgent
-          ? namedPeers.find(p => p.name === remoteAgent.source)?.url
+          ? namedPeers[remoteAgent.source]
           : undefined;
         return {
           key: room.id,
