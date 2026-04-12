@@ -25,6 +25,7 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
   const [roomsConfig, setRoomsConfig] = useState<RoomConfig[]>([]);
   const [fedAgents, setFedAgents] = useState<Record<string, string>>({}); // agentName → nodeName
   const [localNode, setLocalNode] = useState("");
+  const [namedPeers, setNamedPeers] = useState<Array<{ name: string; url: string }>>([]);
   useEffect(() => {
     fetch(apiUrl("/api/rooms")).then(r => r.json()).then(d => {
       if (d.rooms?.length > 0) setRoomsConfig(d.rooms);
@@ -32,6 +33,7 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
     fetch(apiUrl("/api/config")).then(r => r.json()).then(d => {
       if (d.node) setLocalNode(d.node);
       if (d.agents) setFedAgents(d.agents);
+      if (d.namedPeers) setNamedPeers(d.namedPeers);
     }).catch(() => {});
   }, []);
 
@@ -71,10 +73,16 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
             }
           }
         }
+        // If room has remote agents, show peer URL badge instead of "local"
+        const remoteAgent = roomAgents.find(a => a.source && a.source !== localNode);
+        const peerUrl = remoteAgent
+          ? namedPeers.find(p => p.name === remoteAgent.source)?.url
+          : undefined;
         return {
           key: room.id,
           agents: roomAgents,
           style: { accent: room.accent, floor: room.floor, wall: room.wall, label: room.label, description: room.description },
+          source: peerUrl || (remoteAgent ? remoteAgent.source : undefined),
         };
       });
       // Unassigned agents go into an "Other" room
@@ -102,7 +110,7 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
       style: roomStyle(s.name),
       source: s.source,
     }));
-  }, [agents, sessions, roomsConfig, fedAgents, localNode]);
+  }, [agents, sessions, roomsConfig, fedAgents, localNode, namedPeers]);
 
   const busyCount = agents.filter(a => a.status === "busy").length;
 
