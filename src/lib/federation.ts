@@ -60,7 +60,13 @@ export function nodeColor(nodeName: string | undefined | null): { accent: string
 
 // ── Helpers ────────────────────────────────────────────────
 
-/** Format cross-node target: "curfew:echo-oracle" */
+/**
+ * Format cross-node target for sending messages.
+ * Local agents: use tmux target directly (e.g. "01-bob:0").
+ * Remote agents: prefix with node (e.g. "curfew:echo-oracle").
+ * The `agent` param should be the tmux session target when available,
+ * or the agent name for remote federation routing.
+ */
 export function crossNodeTarget(node: string, agent: string, localNode: string): string {
   if (node === localNode) return agent;
   return `${node}:${agent}`;

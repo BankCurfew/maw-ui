@@ -25,6 +25,7 @@ import { LoopsView } from "./components/LoopsView";
 import { JarvisView } from "./components/JarvisView";
 import { HallOfFameView } from "./components/HallOfFameView";
 import { IPadDashboard } from "./components/iPadDashboard";
+import { OracleSheet } from "./components/OracleSheet";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { ShortcutOverlay } from "./components/ShortcutOverlay";
 import { JumpOverlay } from "./components/JumpOverlay";
@@ -111,11 +112,12 @@ function FloatingButtons() {
   );
 }
 import { useFleetStore } from "./lib/store";
+import { useDevice } from "./hooks/useDevice";
 import type { AgentState } from "./lib/types";
 
 function parseHash(raw: string): { view: string; agentName: string | null } {
   const parts = raw.split("/");
-  const view = parts[0] || "mission";
+  const view = parts[0] || "fleet";
   const agentName = parts[1] || null;
   return { view, agentName };
 }
@@ -132,12 +134,12 @@ function useHashRoute() {
       window.location.hash = lastView;
       return lastView;
     }
-    return "mission";
+    return "fleet";
   });
 
   useEffect(() => {
     const onHash = () => {
-      const h = window.location.hash.slice(1) || "mission";
+      const h = window.location.hash.slice(1) || "fleet";
       setHash(h);
       // Persist just the view part (not the agent)
       setLastView(parseHash(h).view);
@@ -238,6 +240,8 @@ export function App() {
   const [showInbox, setShowInbox] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [showOracleSearch, setShowOracleSearch] = useState(false);
+  const [forceTerminal, setForceTerminal] = useState(false);
+  const { isNarrow: isMobile } = useDevice();
 
   // Listen for floating button events
   useEffect(() => {
@@ -385,7 +389,18 @@ export function App() {
     onJump,
     onInbox,
     terminalModal: selectedAgent ? (
-      <TerminalModal agent={selectedAgent} send={send} onClose={onCloseTerminal} onNavigate={onNavigate} onSelectSibling={onSelectAgent} siblings={siblings} />
+      (isMobile && !forceTerminal) ? (
+        <OracleSheet
+          agent={selectedAgent}
+          send={send}
+          onClose={onCloseTerminal}
+          onFullscreen={() => setForceTerminal(true)}
+          siblings={siblings}
+          onSelectSibling={onSelectAgent}
+        />
+      ) : (
+        <TerminalModal agent={selectedAgent} send={send} onClose={() => { setForceTerminal(false); onCloseTerminal(); }} onNavigate={onNavigate} onSelectSibling={onSelectAgent} siblings={siblings} />
+      )
     ) : null,
     showShortcuts,
     onCloseShortcuts: onCloseShortcutsStable,
