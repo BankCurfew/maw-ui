@@ -23,9 +23,15 @@ interface RoomGridProps {
 
 export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent }: RoomGridProps) {
   const [roomsConfig, setRoomsConfig] = useState<RoomConfig[]>([]);
+  const [fedAgents, setFedAgents] = useState<Record<string, string>>({}); // agentName → nodeName
+  const [localNode, setLocalNode] = useState("");
   useEffect(() => {
     fetch(apiUrl("/api/rooms")).then(r => r.json()).then(d => {
       if (d.rooms?.length > 0) setRoomsConfig(d.rooms);
+    }).catch(() => {});
+    fetch(apiUrl("/api/config")).then(r => r.json()).then(d => {
+      if (d.node) setLocalNode(d.node);
+      if (d.agents) setFedAgents(d.agents);
     }).catch(() => {});
   }, []);
 
@@ -44,7 +50,26 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
         const roomAgents: AgentState[] = [];
         for (const memberName of room.members) {
           const agent = agents.find(a => matchAgentToRoom(a, memberName));
-          if (agent) { roomAgents.push(agent); assigned.add(agent.target); }
+          if (agent) {
+            roomAgents.push(agent);
+            assigned.add(agent.target);
+          } else {
+            // Check if this member is a federated (remote) agent
+            const baseName = memberName.toLowerCase().replace(/-oracle$/, "");
+            const nodeName = fedAgents[baseName] || fedAgents[memberName.toLowerCase()];
+            if (nodeName && nodeName !== "local" && nodeName !== localNode) {
+              roomAgents.push({
+                target: `${baseName}@${nodeName}`,
+                name: memberName.toLowerCase(),
+                session: `federation:${nodeName}`,
+                windowIndex: 0,
+                active: false,
+                preview: `Remote agent on ${nodeName}`,
+                status: "idle",
+                source: nodeName,
+              });
+            }
+          }
         }
         return {
           key: room.id,
@@ -77,7 +102,7 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
       style: roomStyle(s.name),
       source: s.source,
     }));
-  }, [agents, sessions, roomsConfig]);
+  }, [agents, sessions, roomsConfig, fedAgents, localNode]);
 
   const busyCount = agents.filter(a => a.status === "busy").length;
 
