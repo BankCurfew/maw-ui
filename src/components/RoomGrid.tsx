@@ -1,8 +1,9 @@
-import { memo, useMemo, useState, useEffect } from "react";
-import { roomStyle } from "../lib/constants";
+import { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { roomStyle, PREVIEW_CARD } from "../lib/constants";
 import { apiUrl } from "../lib/api";
 import { AgentCard } from "./AgentCard";
-import type { AgentState, Session } from "../lib/types";
+import { HoverPreviewCard } from "./HoverPreviewCard";
+import type { AgentState, AgentEvent, Session } from "../lib/types";
 
 interface RoomConfig {
   id: string; label: string; emoji: string; description: string;
@@ -19,9 +20,12 @@ interface RoomGridProps {
   sessions: Session[];
   agents: AgentState[];
   onSelectAgent: (agent: AgentState) => void;
+  send: (msg: object) => void;
+  eventLog?: AgentEvent[];
+  addEvent?: (target: string, type: AgentEvent["type"], detail: string) => void;
 }
 
-export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent }: RoomGridProps) {
+export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent, send, eventLog, addEvent }: RoomGridProps) {
   const [roomsConfig, setRoomsConfig] = useState<RoomConfig[]>([]);
   const [fedAgents, setFedAgents] = useState<Record<string, string>>({}); // agentName → nodeName
   const [localNode, setLocalNode] = useState("");
@@ -114,6 +118,51 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
 
   const busyCount = agents.filter(a => a.status === "busy").length;
 
+  // --- Hover/pin preview (same pattern as FleetGrid) ---
+  type PreviewInfo = { agent: AgentState; accent: string; label: string; pos: { x: number; y: number } };
+  const [hoverPreview, setHoverPreview] = useState<PreviewInfo | null>(null);
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const [pinnedPreview, setPinnedPreview] = useState<PreviewInfo | null>(null);
+  const [pinnedAnimPos, setPinnedAnimPos] = useState<{ left: number; top: number } | null>(null);
+  const pinnedRef = useRef<HTMLDivElement>(null);
+
+  const showPreview = useCallback((agent: AgentState, accent: string, label: string, e: React.MouseEvent) => {
+    if (pinnedPreview) return;
+    clearTimeout(hoverTimeout.current);
+    const cardW = PREVIEW_CARD.width;
+    let x = e.clientX + 8;
+    if (x + cardW > window.innerWidth - 8) x = e.clientX - cardW - 8;
+    if (x < 8) x = 8;
+    setHoverPreview({ agent, accent, label, pos: { x, y: e.clientY - 120 } });
+  }, [pinnedPreview]);
+
+  const hidePreview = useCallback(() => {
+    hoverTimeout.current = setTimeout(() => setHoverPreview(null), 300);
+  }, []);
+
+  const onAgentClick = useCallback((agent: AgentState, accent: string, label: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (pinnedPreview && pinnedPreview.agent.target === agent.target) { setPinnedPreview(null); return; }
+    setPinnedPreview({ agent, accent, label, pos: { x: e.clientX, y: e.clientY } });
+    setHoverPreview(null);
+    send({ type: "subscribe", target: agent.target });
+  }, [pinnedPreview, send]);
+
+  useEffect(() => {
+    if (pinnedPreview) {
+      setPinnedAnimPos({
+        left: (window.innerWidth - PREVIEW_CARD.width) / 2,
+        top: Math.max(40, (window.innerHeight - PREVIEW_CARD.maxHeight) / 2),
+      });
+    } else { setPinnedAnimPos(null); }
+  }, [pinnedPreview]);
+
+  const onPinnedFullscreen = useCallback(() => {
+    if (pinnedPreview) { const a = pinnedPreview.agent; setPinnedPreview(null); setTimeout(() => onSelectAgent(a), 150); }
+  }, [pinnedPreview, onSelectAgent]);
+
+  const onPinnedClose = useCallback(() => { setPinnedPreview(null); }, []);
+
   return (
     <div className="max-w-[1200px] mx-auto px-6 pt-8 pb-12">
       {/* Power bar */}
@@ -197,7 +246,12 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
                     key={agent.target}
                     agent={agent}
                     accent={room.style.accent}
-                    onClick={() => onSelectAgent(agent)}
+                    onClick={(e?: React.MouseEvent) => {
+                      if (e) { onAgentClick(agent, room.style.accent, room.style.label, e); }
+                      else { onSelectAgent(agent); }
+                    }}
+                    onMouseEnterCard={(e: React.MouseEvent) => showPreview(agent, room.style.accent, room.style.label, e)}
+                    onMouseLeaveCard={hidePreview}
                   />
                 ))}
               </div>
@@ -205,6 +259,25 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
           );
         })}
       </div>
+
+      {/* Hover preview */}
+      {hoverPreview && !pinnedPreview && (
+        <div className="fixed pointer-events-none" style={{ zIndex: 40, left: hoverPreview.pos.x, top: hoverPreview.pos.y, maxWidth: PREVIEW_CARD.width }}>
+          <HoverPreviewCard agent={hoverPreview.agent} roomLabel={hoverPreview.label} accent={hoverPreview.accent} compact />
+        </div>
+      )}
+
+      {/* Pinned preview */}
+      {pinnedPreview && pinnedAnimPos && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-30" onClick={onPinnedClose} />
+          <div ref={pinnedRef} className="fixed pointer-events-auto z-40" style={{ left: pinnedAnimPos.left, top: pinnedAnimPos.top, maxWidth: PREVIEW_CARD.width }}>
+            <HoverPreviewCard agent={pinnedPreview.agent} roomLabel={pinnedPreview.label} accent={pinnedPreview.accent}
+              pinned send={send} onFullscreen={onPinnedFullscreen} onClose={onPinnedClose}
+              eventLog={eventLog} addEvent={addEvent} />
+          </div>
+        </>
+      )}
     </div>
   );
 });

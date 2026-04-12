@@ -6,19 +6,21 @@ import { useAgentPreview } from "../lib/previewStore";
 interface AgentCardProps {
   agent: AgentState;
   accent: string;
-  onClick: () => void;
+  onClick: (e?: React.MouseEvent) => void;
+  onMouseEnterCard?: (e: React.MouseEvent) => void;
+  onMouseLeaveCard?: () => void;
 }
 
-export const AgentCard = memo(function AgentCard({ agent, accent, onClick }: AgentCardProps) {
+export const AgentCard = memo(function AgentCard({ agent, accent, onClick, onMouseEnterCard, onMouseLeaveCard }: AgentCardProps) {
   const [hovered, setHovered] = useState(false);
   const preview = useAgentPreview(agent.target);
   const displayName = agent.name.replace(/-oracle$/, "").replace(/-/g, " ");
   return (
     <div
       className="relative flex flex-col items-center gap-1 cursor-pointer"
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onClick={(e) => onClick(e)}
+      onMouseEnter={(e) => { setHovered(true); onMouseEnterCard?.(e); }}
+      onMouseLeave={() => { setHovered(false); onMouseLeaveCard?.(); }}
     >
       <svg width={100} height={85} viewBox="-55 -55 110 88" style={{ overflow: "visible" }}>
         <AgentAvatar
@@ -27,7 +29,7 @@ export const AgentCard = memo(function AgentCard({ agent, accent, onClick }: Age
           status={agent.status}
           preview={preview}
           accent={accent}
-          onClick={onClick}
+          onClick={() => {}}
         />
       </svg>
       <span
