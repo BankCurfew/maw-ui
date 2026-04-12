@@ -1,7 +1,19 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState, useEffect } from "react";
 import { roomStyle } from "../lib/constants";
+import { apiUrl } from "../lib/api";
 import { AgentCard } from "./AgentCard";
 import type { AgentState, Session } from "../lib/types";
+
+interface RoomConfig {
+  id: string; label: string; emoji: string; description: string;
+  lead: string; members: string[]; accent: string; floor: string; wall: string;
+}
+
+function matchAgentToRoom(agent: AgentState, memberName: string): boolean {
+  const a = agent.name.toLowerCase();
+  const m = memberName.toLowerCase();
+  return a === m || a === m.replace(/-oracle$/, "") || `${a}-oracle` === m;
+}
 
 interface RoomGridProps {
   sessions: Session[];
@@ -10,15 +22,62 @@ interface RoomGridProps {
 }
 
 export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent }: RoomGridProps) {
-  const sessionAgents = useMemo(() => {
-    const map = new Map<string, AgentState[]>();
-    for (const a of agents) {
-      const arr = map.get(a.session) || [];
-      arr.push(a);
-      map.set(a.session, arr);
+  const [roomsConfig, setRoomsConfig] = useState<RoomConfig[]>([]);
+  useEffect(() => {
+    fetch(apiUrl("/api/rooms")).then(r => r.json()).then(d => {
+      if (d.rooms?.length > 0) setRoomsConfig(d.rooms);
+    }).catch(() => {});
+  }, []);
+
+  // Group agents by room config, or fall back to tmux session grouping
+  const layout = useMemo(() => {
+    type LayoutItem = {
+      key: string;
+      agents: AgentState[];
+      style: { accent: string; floor: string; wall: string; label: string; description?: string };
+      source?: string;
+    };
+
+    if (roomsConfig.length > 0) {
+      const assigned = new Set<string>();
+      const rooms: LayoutItem[] = roomsConfig.map(room => {
+        const roomAgents: AgentState[] = [];
+        for (const memberName of room.members) {
+          const agent = agents.find(a => matchAgentToRoom(a, memberName));
+          if (agent) { roomAgents.push(agent); assigned.add(agent.target); }
+        }
+        return {
+          key: room.id,
+          agents: roomAgents,
+          style: { accent: room.accent, floor: room.floor, wall: room.wall, label: room.label, description: room.description },
+        };
+      });
+      // Unassigned agents go into an "Other" room
+      const unassigned = agents.filter(a => !assigned.has(a.target));
+      if (unassigned.length > 0) {
+        rooms.push({
+          key: "_unassigned",
+          agents: unassigned,
+          style: { accent: "#78909c", floor: "#1a1a1e", wall: "#121216", label: "Other" },
+        });
+      }
+      return rooms;
     }
-    return map;
-  }, [agents]);
+
+    // Fallback: group by tmux session (old behavior)
+    const sessionAgents = new Map<string, AgentState[]>();
+    for (const a of agents) {
+      const arr = sessionAgents.get(a.session) || [];
+      arr.push(a);
+      sessionAgents.set(a.session, arr);
+    }
+    return sessions.map(s => ({
+      key: s.name,
+      agents: sessionAgents.get(s.name) || [],
+      style: roomStyle(s.name),
+      source: s.source,
+    }));
+  }, [agents, sessions, roomsConfig]);
 
   const busyCount = agents.filter(a => a.status === "busy").length;
 
@@ -39,47 +98,45 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
         <span className="text-[10px] text-white/50 tabular-nums">{busyCount}/{agents.length}</span>
       </div>
 
-      {/* Room grid — full width, 3 columns on wide screens */}
+      {/* Room grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {sessions.map((s) => {
-          const style = roomStyle(s.name);
-          const roomAgents = sessionAgents.get(s.name) || [];
-          const hasBusy = roomAgents.some(a => a.status === "busy");
+        {layout.filter(room => room.agents.length > 0).map((room) => {
+          const hasBusy = room.agents.some(a => a.status === "busy");
 
           return (
             <div
-              key={s.name}
+              key={room.key}
               className="rounded-3xl border backdrop-blur-xl transition-all duration-300 hover:scale-[1.01]"
               style={{
-                background: `${style.floor}88`,
-                borderColor: hasBusy ? `${style.accent}40` : `${style.accent}12`,
+                background: `${room.style.floor}88`,
+                borderColor: hasBusy ? `${room.style.accent}40` : `${room.style.accent}12`,
                 boxShadow: hasBusy
-                  ? `0 8px 32px ${style.accent}15, 0 0 60px ${style.accent}08, inset 0 1px 0 rgba(255,255,255,0.05)`
+                  ? `0 8px 32px ${room.style.accent}15, 0 0 60px ${room.style.accent}08, inset 0 1px 0 rgba(255,255,255,0.05)`
                   : `0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)`,
               }}
             >
               {/* Room header */}
               <div
                 className="flex items-center justify-between px-5 py-3 rounded-t-3xl border-b"
-                style={{ background: `${style.wall}dd`, borderColor: `${style.accent}15` }}
+                style={{ background: `${room.style.wall}dd`, borderColor: `${room.style.accent}15` }}
               >
                 <div className="flex items-center gap-2">
                   <span
                     className="text-xs font-bold tracking-[2px] uppercase"
-                    style={{ color: style.accent }}
+                    style={{ color: room.style.accent }}
                   >
-                    {style.label}
+                    {room.style.label}
                   </span>
-                  {style.description && (
+                  {room.style.description && (
                     <span className="text-[9px] text-white/30 font-mono hidden sm:inline">
-                      {style.description}
+                      {room.style.description}
                     </span>
                   )}
-                  {s.source ? (
+                  {room.source ? (
                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
                       style={{ background: "rgba(168,85,247,0.15)", color: "#c084fc" }}>
                       <span className="w-1 h-1 rounded-full" style={{ background: "#c084fc" }} />
-                      {(() => { try { return new URL(s.source).hostname; } catch { return s.source; } })()}
+                      {(() => { try { return new URL(room.source).hostname; } catch { return room.source; } })()}
                     </span>
                   ) : (
                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
@@ -91,30 +148,25 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
                 </div>
                 <span
                   className="text-[10px] font-bold px-2 py-0.5 rounded-md"
-                  style={{ color: style.accent, background: `${style.accent}15` }}
+                  style={{ color: room.style.accent, background: `${room.style.accent}15` }}
                 >
-                  {roomAgents.length}
+                  {room.agents.length}
                 </span>
               </div>
 
               {/* Accent line */}
-              <div className="h-[2px] opacity-50" style={{ background: style.accent }} />
+              <div className="h-[2px] opacity-50" style={{ background: room.style.accent }} />
 
               {/* Agent grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 p-5 min-h-[140px]">
-                {roomAgents.map((agent) => (
+                {room.agents.map((agent) => (
                   <AgentCard
                     key={agent.target}
                     agent={agent}
-                    accent={style.accent}
+                    accent={room.style.accent}
                     onClick={() => onSelectAgent(agent)}
                   />
                 ))}
-                {roomAgents.length === 0 && (
-                  <div className="col-span-full text-center text-[10px] text-white/30 py-4">
-                    Empty room
-                  </div>
-                )}
               </div>
             </div>
           );
