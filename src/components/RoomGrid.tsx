@@ -70,6 +70,11 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
                   >
                     {style.label}
                   </span>
+                  {style.description && (
+                    <span className="text-[9px] text-white/30 font-mono hidden sm:inline">
+                      {style.description}
+                    </span>
+                  )}
                   {s.source ? (
                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
                       style={{ background: "rgba(168,85,247,0.15)", color: "#c084fc" }}>
