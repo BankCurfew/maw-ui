@@ -3,6 +3,8 @@ import { roomStyle, PREVIEW_CARD } from "../lib/constants";
 import { apiUrl } from "../lib/api";
 import { AgentCard } from "./AgentCard";
 import { HoverPreviewCard } from "./HoverPreviewCard";
+
+const isTouch = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 import type { AgentState, AgentEvent, Session } from "../lib/types";
 
 interface RoomConfig {
@@ -142,11 +144,13 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
 
   const onAgentClick = useCallback((agent: AgentState, accent: string, label: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Mobile/touch: skip floating card, go straight to OracleSheet
+    if (isTouch) { onSelectAgent(agent); return; }
     if (pinnedPreview && pinnedPreview.agent.target === agent.target) { setPinnedPreview(null); return; }
     setPinnedPreview({ agent, accent, label, pos: { x: e.clientX, y: e.clientY } });
     setHoverPreview(null);
     send({ type: "subscribe", target: agent.target });
-  }, [pinnedPreview, send]);
+  }, [pinnedPreview, send, onSelectAgent]);
 
   useEffect(() => {
     if (pinnedPreview) {
@@ -250,8 +254,8 @@ export const RoomGrid = memo(function RoomGrid({ sessions, agents, onSelectAgent
                       if (e) { onAgentClick(agent, room.style.accent, room.style.label, e); }
                       else { onSelectAgent(agent); }
                     }}
-                    onMouseEnterCard={(e: React.MouseEvent) => showPreview(agent, room.style.accent, room.style.label, e)}
-                    onMouseLeaveCard={hidePreview}
+                    onMouseEnterCard={isTouch ? undefined : (e: React.MouseEvent) => showPreview(agent, room.style.accent, room.style.label, e)}
+                    onMouseLeaveCard={isTouch ? undefined : hidePreview}
                   />
                 ))}
               </div>
