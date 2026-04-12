@@ -1,6 +1,6 @@
 # maw-ui
 
-ARRA Office frontend — the unified dashboard for Oracle fleet management.
+BoB Office frontend — the unified dashboard for Oracle fleet management.
 
 ## Modules
 
