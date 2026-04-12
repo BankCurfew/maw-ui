@@ -1,5 +1,7 @@
 import { lazy, Suspense } from "react";
 import type { AgentState } from "../lib/types";
+import { TERMINAL_COMMANDS } from "../quickCommands";
+import { useFileAttach, FileInput, AttachmentChips } from "../hooks/useFileAttach";
 
 const XTerminal = lazy(() => import("./XTerminal").then(m => ({ default: m.XTerminal })));
 
@@ -23,8 +25,10 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 export function TerminalModal({ agent, send, onClose, onNavigate, onSelectSibling, siblings }: TerminalModalProps) {
+  const { attachments, removeAttachment, uploading, inputRef, onFileChange, drag } = useFileAttach();
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0f]">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0a0f]" {...drag}>
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-2 bg-[#0e0e18] border-b border-white/[0.06]">
@@ -94,6 +98,28 @@ export function TerminalModal({ agent, send, onClose, onNavigate, onSelectSiblin
             />
           </Suspense>
         </div>
+
+        {/* Quick commands */}
+        <div className="flex items-center gap-1 px-3 py-1.5 bg-[#0e0e18] border-t border-white/[0.06] overflow-x-auto scrollbar-none">
+          {TERMINAL_COMMANDS.map(cmd => (
+            <button
+              key={cmd.label}
+              onClick={() => send({ type: "input", target: agent.target, data: cmd.text })}
+              className="px-2 py-1 rounded text-[11px] font-mono whitespace-nowrap cursor-pointer transition-all hover:brightness-125"
+              style={{ color: cmd.color, background: `${cmd.color}15`, border: `1px solid ${cmd.color}30` }}
+            >
+              {cmd.label}
+            </button>
+          ))}
+        </div>
+
+        {/* File attach chips */}
+        {(attachments.length > 0 || uploading) && (
+          <div className="px-3 py-1 bg-[#0e0e18] border-t border-white/[0.06]">
+            <AttachmentChips attachments={attachments} onRemove={removeAttachment} uploading={uploading} />
+          </div>
+        )}
+        <FileInput inputRef={inputRef} onChange={onFileChange} />
       </div>
     </div>
   );
