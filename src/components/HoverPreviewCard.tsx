@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback, memo } from "react";
-import { ansiToHtml, processCapture } from "../lib/ansi";
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
+import { ansiToHtml, processCapture, linkifyHtml } from "../lib/ansi";
 import { agentColor, PREVIEW_CARD } from "../lib/constants";
 import { apiUrl } from "../lib/api";
-import { useAgentPreview } from "../lib/previewStore";
+import { useFileAttach, FileInput, AttachmentChips } from "../hooks/useFileAttach";
+import { FULL_COMMANDS } from "../quickCommands";
 import type { AgentState, AgentEvent } from "../lib/types";
 
 interface HoverPreviewCardProps {
@@ -24,15 +25,56 @@ const STATUS_COLORS: Record<string, string> = {
   busy: "#fdd835",
   ready: "#4caf50",
   idle: "#666",
-  crashed: "#ef4444",
 };
 
 const STATUS_LABELS: Record<string, string> = {
   busy: "BUSY",
   ready: "READY",
   idle: "IDLE",
-  crashed: "CRASHED",
 };
+
+/** Parse statusline "📡 sid • HH:MM • N% Nk/Mk • r:Nk f:Nk on • Model" into segments */
+interface StatusLineParsed {
+  ctxPercent?: number;
+  tokens?: string;
+  duration?: string;
+  model?: string;
+  sessionId?: string;
+  branch?: string;
+}
+
+function parseStatusLine(raw: string): StatusLineParsed | null {
+  // Find the 📡 line in raw terminal content (strip ANSI)
+  const lines = raw.replace(/\x1b\[[0-9;]*m/g, "").split("\n");
+  const line = lines.reverse().find(l => l.includes("📡"));
+  if (!line) return null;
+
+  // New 1-line format: 📡 42% 83k/200k • 4h13m • Opus 4.6 • 70d6aff3 on main*
+  const m = line.match(/📡\s+(\d+)%\s+(\d+k\/\d+k)\s+•\s+(\S+)\s+•\s+(.+?)\s+•\s+(\w+)(?:\s+on\s+(.+))?/);
+  if (m) {
+    return {
+      ctxPercent: parseInt(m[1], 10),
+      tokens: m[2],
+      duration: m[3],
+      model: m[4]?.trim(),
+      sessionId: m[5]?.slice(0, 8),
+      branch: m[6]?.trim(),
+    };
+  }
+
+  // Fallback: old 2-line format — 📡 sid • HH:MM • N% Nk/Mk • ... • Model
+  const parts = line.replace(/📡\s*/, "").split("•").map(s => s.trim());
+  if (parts.length < 3) return null;
+  const ctxMatch = parts[2]?.match(/(\d+)%/);
+  const tokensMatch = parts[2]?.match(/(\d+k\/\d+k)/);
+  return {
+    sessionId: parts[0]?.replace(/→.*/, "").trim().slice(0, 8),
+    duration: parts[1]?.match(/\d{1,2}:\d{2}/)?.[0],
+    ctxPercent: ctxMatch ? parseInt(ctxMatch[1], 10) : undefined,
+    tokens: tokensMatch?.[1],
+    model: parts[parts.length - 1]?.trim() || undefined,
+  };
+}
 
 // trimCapture replaced by shared processCapture from ansi.ts
 
@@ -41,7 +83,7 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
   roomLabel,
   accent,
   pinned = false,
-  compact = false,
+  compact: _compact,
   send,
   onFullscreen,
   onClose,
@@ -59,10 +101,11 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
   }, [onInputBufChange]);
   const termRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { uploading, attachments, inputRef: fileRef, pickFile, onFileChange, removeAttachment, clearAttachments, buildMessage, drag, onPaste } = useFileAttach();
   const color = agentColor(agent.name);
   const displayName = agent.name.replace(/-oracle$/, "").replace(/-/g, " ");
+  const statusLine = useMemo(() => parseStatusLine(content), [content]);
   const statusColor = STATUS_COLORS[agent.status] || "#666";
-  const agentPreview = useAgentPreview(agent.target);
 
   // Sync prevInputRef when external buffer initializes
   useEffect(() => {
@@ -92,16 +135,18 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
       onFullscreen?.();
       return;
     }
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (streamingRef.current) {
         // In streaming mode: just send Enter, chars already sent
         addEvent?.(agent.target, "command", inputBuf);
         send?.({ type: "send", target: agent.target, text: "\r" });
         streamingRef.current = false;
-      } else if (inputBuf && send) {
-        addEvent?.(agent.target, "command", inputBuf);
-        send({ type: "send", target: agent.target, text: inputBuf });
+      } else if ((inputBuf || attachments.length > 0) && send) {
+        const msg = buildMessage(inputBuf);
+        addEvent?.(agent.target, "command", msg);
+        send({ type: "send", target: agent.target, text: msg });
+        clearAttachments();
       }
       setInputBuf("");
       prevInputRef.current = "";
@@ -118,7 +163,7 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
   const prevInputRef = useRef("");
 
   // Stream chars to tmux when input starts with /
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const val = e.target.value;
     const prev = prevInputRef.current;
     prevInputRef.current = val;
@@ -200,9 +245,9 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
       className="flex flex-col overflow-hidden rounded-xl border border-white/[0.08] shadow-2xl"
       style={{
         background: "#0a0a0f",
-        width: compact ? "100%" : PREVIEW_CARD.width,
-        height: compact ? "100%" : "calc(100vh - 120px)",
-        maxHeight: compact ? "100%" : PREVIEW_CARD.maxHeight,
+        width: PREVIEW_CARD.width,
+        height: "calc(100vh - 120px)",
+        maxHeight: PREVIEW_CARD.maxHeight,
       }}
       onMouseDown={(e) => {
         if (pinned && e.target !== inputRef.current) {
@@ -211,40 +256,7 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
         }
       }}
     >
-      {/* Header — compact (inline) or full (big avatar) */}
-      {compact ? (
-        <div
-          className="flex items-center gap-2.5 px-3 py-2"
-          style={{
-            background: `linear-gradient(90deg, ${accent}15 0%, transparent 100%)`,
-            borderBottom: `1px solid ${accent}20`,
-          }}
-        >
-          <span
-            className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{
-              background: statusColor,
-              boxShadow: agent.status !== "idle" ? `0 0 6px ${statusColor}` : undefined,
-            }}
-          />
-          <span className="text-xs font-bold tracking-[2px] uppercase truncate" style={{ color: accent }}>
-            {displayName}
-          </span>
-          <span className="text-[9px] font-mono shrink-0" style={{ color: statusColor }}>
-            {STATUS_LABELS[agent.status]}
-          </span>
-          <span className="text-[8px] text-white/25 font-mono shrink-0 ml-auto">{agent.target}</span>
-          {pinned && onClose && (
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-sm text-white/30 hover:text-white/70 hover:bg-red-500/15 active:scale-90 cursor-pointer transition-all shrink-0"
-              title="Close (Esc)"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      ) : (
+      {/* Header with big avatar */}
       <div
         className="relative flex flex-col items-center pt-6 pb-4 px-4"
         style={{
@@ -392,14 +404,19 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
             </span>
           </span>
           <span className="text-[10px] text-white/40 font-mono">{roomLabel}</span>
+          {agent.contextPercent != null && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{
+              background: agent.contextPercent >= 60 ? "rgba(34,197,94,0.12)" : agent.contextPercent >= 30 ? "rgba(251,191,36,0.12)" : "rgba(239,68,68,0.15)",
+              color: agent.contextPercent >= 60 ? "#22C55E" : agent.contextPercent >= 30 ? "#fbbf24" : "#ef4444",
+            }}>CTX:{agent.contextPercent}%</span>
+          )}
         </div>
 
         <span className="mt-1 text-[9px] text-white/25 font-mono">{agent.target}</span>
       </div>
-      )}
 
-      {/* Event timeline badges — pinned only, hidden in compact */}
-      {pinned && !compact && eventLog && (() => {
+      {/* Event timeline badges — pinned only */}
+      {pinned && eventLog && (() => {
         const events = eventLog.filter(e => e.target === agent.target).slice(-20);
         if (events.length === 0) return null;
         const STATUS_BADGE: Record<string, { bg: string; text: string }> = {
@@ -451,7 +468,7 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
         {pinned && onClose && (
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl font-bold text-white/30 hover:text-white/70 hover:bg-red-500/15 active:scale-90 cursor-pointer transition-all"
+            className="px-1.5 py-0.5 rounded text-[9px] text-white/30 hover:text-white/60 hover:bg-white/[0.06] cursor-pointer transition-colors"
             title="Close (Esc)"
           >
             ✕
@@ -459,11 +476,54 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
         )}
       </div>
 
+      {/* Statusline pill badges */}
+      {statusLine && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.02] border-b border-white/[0.04] flex-wrap">
+          {statusLine.ctxPercent != null && (
+            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded" style={{
+              background: statusLine.ctxPercent >= 80 ? "rgba(239,68,68,0.15)" : statusLine.ctxPercent >= 50 ? "rgba(251,191,36,0.12)" : "rgba(34,197,94,0.12)",
+              color: statusLine.ctxPercent >= 80 ? "#ef4444" : statusLine.ctxPercent >= 50 ? "#fbbf24" : "#22C55E",
+            }}>
+              {statusLine.ctxPercent}%
+            </span>
+          )}
+          {statusLine.tokens && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{
+              background: statusLine.ctxPercent != null && statusLine.ctxPercent >= 80 ? "rgba(239,68,68,0.10)" : statusLine.ctxPercent != null && statusLine.ctxPercent >= 50 ? "rgba(251,191,36,0.08)" : "rgba(34,197,94,0.08)",
+              color: statusLine.ctxPercent != null && statusLine.ctxPercent >= 80 ? "#ef4444" : statusLine.ctxPercent != null && statusLine.ctxPercent >= 50 ? "#fbbf24" : "#22C55E",
+            }}>
+              {statusLine.tokens}
+            </span>
+          )}
+          {statusLine.duration && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">
+              {statusLine.duration}
+            </span>
+          )}
+          {statusLine.model && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">
+              {statusLine.model}
+            </span>
+          )}
+          {statusLine.sessionId && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.06] text-white/40">
+              {statusLine.sessionId}
+            </span>
+          )}
+          {statusLine.branch && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.06] text-white/50">
+              {statusLine.branch}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="relative flex-1" style={{ background: "#08080c" }}>
         <div
           ref={termRef}
-          className="absolute inset-0 px-3 py-2 overflow-y-auto overflow-x-auto font-mono text-[10px] leading-[1.4] text-[#cdd6f4] whitespace-pre break-normal"
-          dangerouslySetInnerHTML={{ __html: ansiToHtml(processCapture(content)) }}
+          className="absolute inset-0 px-3 py-2 overflow-y-auto overflow-x-hidden font-mono text-[10px] leading-[1.4] text-[#cdd6f4] whitespace-pre-wrap break-all"
+          style={{ touchAction: "pan-y", overscrollBehavior: "contain" }}
+          dangerouslySetInnerHTML={{ __html: linkifyHtml(ansiToHtml(processCapture(content))) }}
         />
         {pinned && send && (
           <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
@@ -489,19 +549,27 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
 
       {/* Bottom: input when pinned, preview text when hovering */}
       {pinned && send ? (
-        <div
-          className="flex items-center gap-2 px-3 py-2 bg-[#0e0e18] border-t border-white/[0.06] font-mono text-xs cursor-text"
-          onClick={() => inputRef.current?.focus()}
-        >
+        <div className="bg-[#0e0e18] border-t border-white/[0.06]" onPaste={onPaste} {...drag}>
+          <FileInput inputRef={fileRef} onChange={onFileChange} />
+          <AttachmentChips attachments={attachments} onRemove={removeAttachment} uploading={uploading} />
+          <div
+            className="flex items-center gap-2 px-3 py-2 font-mono text-xs cursor-text"
+            onClick={() => inputRef.current?.focus()}
+          >
+          <button onClick={pickFile} className="text-white/30 hover:text-cyan-400 transition-colors shrink-0" title="Attach file">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
           <span className="text-cyan-400 font-semibold shrink-0">&#x276f;</span>
-          <input
-            ref={inputRef}
-            type="text"
+          <textarea
+            ref={inputRef as any}
             value={inputBuf}
             onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent text-white/90 outline-none caret-cyan-400 font-mono text-xs [&::-webkit-search-cancel-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden"
-            style={{ caretColor: "#22d3ee", WebkitAppearance: "none" }}
+            onKeyDown={(e) => { handleKeyDown(e as any); e.currentTarget.style.height = "auto"; e.currentTarget.style.height = e.currentTarget.scrollHeight + "px"; }}
+            rows={1}
+            className="flex-1 bg-transparent text-white/90 outline-none caret-cyan-400 font-mono text-xs resize-none"
+            style={{ caretColor: "#22d3ee", maxHeight: 80, overflowY: "auto" }}
             inputMode="text"
             enterKeyHint="send"
             spellCheck={false}
@@ -553,33 +621,25 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
             SEND
           </button>
         </div>
+        </div>
       ) : (
         <div className="px-3 py-2 bg-[#0e0e18] border-t border-white/[0.06] font-mono text-[9px] text-white/30 truncate">
-          {agentPreview || "..."}
+          {agent.preview || "..."}
         </div>
       )}
 
       {/* Quick command shortcuts */}
       {pinned && send && (
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0a0a14] border-t border-white/[0.04] overflow-x-auto" style={{ touchAction: "pan-x", overscrollBehavior: "contain" }}>
-          {[
-            { label: "y", text: "y\r", color: "#22C55E" },
-            { label: "n", text: "n\r", color: "#ef5350" },
-            { label: "↵", text: "\r", color: "#64748B" },
-            { label: "Tab", text: "\t", color: "#a78bfa" },
-            { label: "/recap", text: "/recap\r", color: "#fbbf24" },
-            { label: "/help", text: "/help\r", color: "#42a5f5" },
-            { label: "Ctrl+C", text: "\x03", color: "#ef5350" },
-            { label: "Ctrl+Z", text: "\x1a", color: "#ffa726" },
-            { label: "exit", text: "exit\r", color: "#94A3B8" },
-          ].map(cmd => (
+          {FULL_COMMANDS.map(cmd => (
             <button
               key={cmd.label}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
-                send({ type: "send", target: agent.target, text: cmd.text });
-                addEvent?.(agent.target, "command", cmd.label);
+                if (cmd.action === "restart") { if (confirm(`Restart ${agent.name}?`)) send({ type: "restart", target: agent.target }); }
+                else if (cmd.action) send({ type: cmd.action, target: agent.target });
+                else { send({ type: "send", target: agent.target, text: cmd.text }); addEvent?.(agent.target, "command", cmd.label); }
                 inputRef.current?.focus();
               }}
               className="shrink-0 px-2.5 py-1 rounded-md text-[10px] font-mono cursor-pointer active:scale-90 transition-all"
@@ -591,8 +651,8 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
         </div>
       )}
 
-      {/* Shortcut hints — pinned only, hidden in compact */}
-      {pinned && !compact && (
+      {/* Shortcut hints — always visible when pinned */}
+      {pinned && (
         <div className="flex items-center justify-center gap-3 px-3 py-1.5 bg-[#08080c] border-t border-white/[0.04] font-mono text-[8px] text-white/20">
           <span><kbd className="text-white/30">Enter</kbd> send</span>
           <span><kbd className="text-white/30">⌃Enter</kbd> fullscreen</span>
