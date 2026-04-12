@@ -561,7 +561,7 @@ export const HoverPreviewCard = memo(function HoverPreviewCard({
 
       {/* Quick command shortcuts */}
       {pinned && send && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0a0a14] border-t border-white/[0.04] overflow-x-auto">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0a0a14] border-t border-white/[0.04] overflow-x-auto" style={{ touchAction: "pan-x", overscrollBehavior: "contain" }}>
           {[
             { label: "y", text: "y\r", color: "#22C55E" },
             { label: "n", text: "n\r", color: "#ef5350" },
