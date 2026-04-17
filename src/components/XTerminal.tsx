@@ -39,12 +39,12 @@ const THEME = {
   brightWhite: "#ffffff",
 };
 
-// Sticky-bottom scroll (#27 mobile path): preserve user scroll position when
-// new PTY output arrives. xterm.js auto-scrolls to follow the cursor on every
-// write() — without this, scrolling up to read history snaps back down on the
-// next "thinking dots" tick. Threshold of 5 lines absorbs fit.fit() jitter on
-// resize (keyboard open/close, orientation change).
+// Viewport-lock scroll (#27 v2): when user touch-scrolls up, lock viewport
+// for 10s. On each write, xterm follows cursor (can't prevent) — but the
+// write callback immediately snaps viewport back to the saved line via
+// term.scrollToLine(). Lock clears early if user scrolls back to bottom.
 const STICKY_THRESHOLD_LINES = 5;
+const VIEWPORT_LOCK_MS = 10_000;
 
 export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibling, readOnly = false }: XTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,8 +54,9 @@ export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibli
   const onNavigateRef = useRef(onNavigate);
   const siblingsRef = useRef(siblings);
   const onSelectSiblingRef = useRef(onSelectSibling);
-  // Tracks whether the user scrolled up past the threshold; set by term.onScroll.
-  const wasScrolledUpRef = useRef(false);
+  // Viewport lock state — survives across effect re-runs via ref.
+  const lockedUntilRef = useRef(0);
+  const savedViewportYRef = useRef(0);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => { onNavigateRef.current = onNavigate; }, [onNavigate]);
   useEffect(() => { siblingsRef.current = siblings; }, [siblings]);
@@ -79,23 +80,37 @@ export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibli
     const fit = new FitAddon();
     term.loadAddon(fit);
 
-    // Track whether the user has scrolled up — writeWithStickyBottom uses this
-    // to decide whether to counter-scroll after each write.
+    // Clear viewport lock when user scrolls back to bottom.
     term.onScroll(() => {
       const buf = term.buffer.active;
-      wasScrolledUpRef.current = (buf.baseY - buf.viewportY) > STICKY_THRESHOLD_LINES;
+      if ((buf.baseY - buf.viewportY) <= STICKY_THRESHOLD_LINES) {
+        lockedUntilRef.current = 0;
+      }
     });
 
-    // Wrapper around term.write that preserves user scroll position. xterm
-    // always follows the cursor on write; this measures how many lines
-    // baseY advanced and counter-scrolls by the same delta via the write
-    // callback (runs after parse, when the new baseY is final).
+    // Touch scroll-up detection: when user swipes up, lock viewport for 10s
+    // and save the current viewportY so writes can snap back to it.
+    let touchStartY = 0;
+    const onTouchStart = (e: TouchEvent) => { touchStartY = e.touches[0].clientY; };
+    const onTouchMove = (e: TouchEvent) => {
+      const dy = e.touches[0].clientY - touchStartY;
+      if (dy > 10) {
+        // Finger moved down on screen = scrolling UP in terminal
+        savedViewportYRef.current = term.buffer.active.viewportY;
+        lockedUntilRef.current = Date.now() + VIEWPORT_LOCK_MS;
+      }
+    };
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: true });
+
+    // Write wrapper: let xterm render + follow cursor, then snap viewport
+    // back to saved position if lock is active. Uses absolute scrollToLine
+    // instead of relative scrollLines — immune to cursor-positioning sequences.
     const writeWithStickyBottom = (data: Uint8Array | string) => {
-      const preBaseY = term.buffer.active.baseY;
       term.write(data, () => {
-        if (!wasScrolledUpRef.current) return;
-        const delta = term.buffer.active.baseY - preBaseY;
-        if (delta > 0) term.scrollLines(-delta);
+        if (Date.now() < lockedUntilRef.current) {
+          term.scrollToLine(savedViewportYRef.current);
+        }
       });
     };
 
@@ -196,6 +211,8 @@ export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibli
     }, 50);
 
     return () => {
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
       clearTimeout(openTimer);
       clearTimeout(resizeTimer);
       resizeObserver?.disconnect();
