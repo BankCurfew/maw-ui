@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useRef, type ReactNode } from "react";
+import { memo, useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { apiUrl, isRemote } from "../lib/api";
 import { SOUND_PROFILES, getSoundProfile, setSoundProfile, previewSound, type SoundProfile } from "../lib/sounds";
 
@@ -109,6 +109,80 @@ function useTokenRate() {
   return { lastHourRate };
 }
 
+function MobileNav({ activeView, askCount, onInbox }: { activeView: string; askCount: number; onInbox?: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const close = useCallback(() => setMenuOpen(false), []);
+
+  // Close on click outside
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) close();
+    };
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [menuOpen, close]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [menuOpen, close]);
+
+  return (
+    <div ref={menuRef} className="relative ml-auto">
+      <button
+        onClick={() => setMenuOpen(!menuOpen)}
+        className="px-3 py-1.5 rounded-lg text-base font-bold active:scale-95 transition-all"
+        style={{ background: "rgba(34,211,238,0.15)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.25)" }}
+        title="Navigation menu"
+      >
+        {menuOpen ? "✕" : "☰"}
+      </button>
+      {menuOpen && (
+        <div
+          className="absolute top-full right-0 mt-2 rounded-xl overflow-hidden z-50 w-[calc(100vw-2rem)] max-w-xs"
+          style={{ background: "rgba(0,0,0,0.90)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(16px)" }}
+        >
+          {onInbox && (
+            <button
+              onClick={() => { onInbox(); close(); }}
+              className="relative w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-mono transition-colors hover:bg-white/[0.06]"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)" }}
+            >
+              Inbox
+              {askCount > 0 && (
+                <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]">
+                  {askCount}
+                </span>
+              )}
+            </button>
+          )}
+          {NAV_ITEMS.map((item) => (
+            <a
+              key={item.id}
+              href={item.href}
+              onClick={close}
+              className="block w-full px-4 py-3 text-sm font-mono transition-colors hover:bg-white/[0.06]"
+              style={{
+                color: activeView === item.id ? "#22d3ee" : "rgba(255,255,255,0.5)",
+                fontWeight: activeView === item.id ? 700 : 400,
+                background: activeView === item.id ? "rgba(34,211,238,0.08)" : "transparent",
+              }}
+            >
+              {item.label}
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const StatusBar = memo(function StatusBar({ connected, agentCount, sessionCount, tabCount = 0, activeView = "office", askCount = 0, onInbox, onJump, muted, onToggleMute, children }: StatusBarProps) {
   const { lastHourRate } = useTokenRate();
   return (
@@ -166,31 +240,37 @@ export const StatusBar = memo(function StatusBar({ connected, agentCount, sessio
         </button>
       )}
 
-      <nav className={`${isTouch && onJump ? "" : "ml-auto "}flex items-center gap-3 sm:gap-4 text-sm`}>
-        {onInbox && (
-          <button onClick={onInbox} className="relative transition-colors whitespace-nowrap text-white/50 hover:text-white/80 cursor-pointer" title="Inbox (i)">
-            Inbox
-            {askCount > 0 && (
-              <span className="absolute -top-1.5 -right-3 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]">
-                {askCount}
-              </span>
-            )}
-          </button>
-        )}
-        {NAV_ITEMS.map((item) => (
-          <a
-            key={item.id}
-            href={item.href}
-            className={`transition-colors whitespace-nowrap ${
-              activeView === item.id
-                ? "text-cyan-400 font-bold"
-                : "text-white/50 hover:text-white/80"
-            }`}
-          >
-            {item.label}
-          </a>
-        ))}
-      </nav>
+      {/* Desktop: horizontal nav */}
+      {!isTouch && (
+        <nav className="ml-auto flex items-center gap-3 sm:gap-4 text-sm">
+          {onInbox && (
+            <button onClick={onInbox} className="relative transition-colors whitespace-nowrap text-white/50 hover:text-white/80 cursor-pointer" title="Inbox (i)">
+              Inbox
+              {askCount > 0 && (
+                <span className="absolute -top-1.5 -right-3 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]">
+                  {askCount}
+                </span>
+              )}
+            </button>
+          )}
+          {NAV_ITEMS.map((item) => (
+            <a
+              key={item.id}
+              href={item.href}
+              className={`transition-colors whitespace-nowrap ${
+                activeView === item.id
+                  ? "text-cyan-400 font-bold"
+                  : "text-white/50 hover:text-white/80"
+              }`}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+      )}
+
+      {/* Mobile: hamburger menu */}
+      {isTouch && <MobileNav activeView={activeView} askCount={askCount} onInbox={onInbox} />}
     </header>
   );
 });
