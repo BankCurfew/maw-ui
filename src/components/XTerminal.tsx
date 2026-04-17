@@ -66,11 +66,14 @@ export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibli
     const container = containerRef.current;
     if (!container) return;
 
+    // Responsive font size — 16px on mobile prevents iOS auto-zoom on focus
+    const isMobile = window.innerWidth < 640;
+
     const term = new Terminal({
       theme: THEME,
       fontFamily: "Monaco, 'Cascadia Code', 'Fira Code', monospace",
-      fontSize: 13,
-      lineHeight: 1.35,
+      fontSize: isMobile ? 16 : 13,
+      lineHeight: isMobile ? 1.2 : 1.35,
       cursorBlink: !readOnly,
       cursorStyle: readOnly ? "underline" : "bar",
       disableStdin: readOnly,
