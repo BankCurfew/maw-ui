@@ -76,6 +76,12 @@ const NAV_ITEMS = [
   { href: "#terminal", label: "Terminal", id: "terminal" },
   { href: "#chat", label: "Chat", id: "chat" },
   { href: "#teams", label: "Teams", id: "teams" },
+  { href: "#federation", label: "Fed", id: "federation" },
+  { href: "#board", label: "Board", id: "board" },
+  { href: "#loops", label: "Loops", id: "loops" },
+  { href: "#jarvis", label: "Jarvis", id: "jarvis" },
+  { href: "#fame", label: "Fame", id: "fame" },
+  { href: "#bob", label: "BoB", id: "bob" },
   { href: "#config", label: "Config", id: "config" },
 ];
 
@@ -108,7 +114,7 @@ export const StatusBar = memo(function StatusBar({ connected, agentCount, sessio
   return (
     <header className="sticky top-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-2 mx-4 sm:mx-6 mt-3 px-4 sm:px-6 py-2.5 rounded-2xl bg-black/50 backdrop-blur-xl border border-white/[0.06] shadow-[0_4px_30px_rgba(0,0,0,0.4)]">
       <a href="#office" className="text-base sm:text-lg font-bold tracking-[4px] sm:tracking-[6px] text-cyan-400 uppercase whitespace-nowrap hover:text-cyan-300 transition-colors">
-        ARRA Office
+        BoB Office
       </a>
 
       <span className="flex items-center gap-1.5 text-sm text-white/70">

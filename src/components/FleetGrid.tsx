@@ -1,5 +1,7 @@
 import { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { HoverPreviewCard } from "./HoverPreviewCard";
+
+const isTouch = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 import { MiniPreview } from "./MiniPreview";
 import { StageSection } from "./StageSection";
 import { FootballPitch } from "./FootballPitch";
@@ -284,11 +286,13 @@ export const FleetGrid = memo(function FleetGrid({
 
   const onAgentClick = useCallback((agent: AgentState, accent: string, label: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Mobile/touch: skip floating card, go straight to OracleSheet
+    if (isTouch) { onSelectAgent(agent); return; }
     if (pinnedPreview && pinnedPreview.agent.target === agent.target) { setPinnedPreview(null); return; }
     setPinnedPreview({ agent, accent, label, pos: { x: e.clientX, y: e.clientY } });
     setHoverPreview(null);
     send({ type: "subscribe", target: agent.target });
-  }, [pinnedPreview, send]);
+  }, [pinnedPreview, send, onSelectAgent]);
 
   // After sending via mic input, open pinned preview to watch the result
   const onSendDone = useCallback((agent: AgentState, accent: string, label: string) => {

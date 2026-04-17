@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ARRA Office — 3D Arena</title>
+<title>BoB Office — 3D Arena</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #0a0a0f; overflow: hidden; font-family: 'SF Mono', monospace; }
@@ -33,7 +33,7 @@
 <body>
 
 <div id="topbar">
-  <span class="title">ARRA OFFICE</span>
+  <span class="title">BOB OFFICE</span>
   <span class="stats" id="agent-count">0 agents</span>
   <a href="/">← Dashboard</a>
 </div>
@@ -170,7 +170,7 @@ function init() {
   grid.material.transparent = true;
   scene.add(grid);
 
-  // Center rug + ARRA ring
+  // Center rug + BoB ring
   const hub = new THREE.Mesh(
     new THREE.CircleGeometry(3, 32),
     new THREE.MeshPhongMaterial({ color: 0x8b5a3a, transparent: true, opacity: 0.4 })
